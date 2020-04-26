@@ -47,10 +47,15 @@ const Command = styled.div.attrs(props => ({
   }
 `
 
-const Console = () => {
+const Console = ({
+  history,
+  onCommand
+}) => {
   const [command, setCommand] = useState('')
   const [clickPosition, setClickPosition] = useState(null)
   const [inputHeight, setInputHeight] = useState(0)
+  const [prevCommands, setPrevCommands] = useState([])
+  const [prevCommandPointer, setPrevCommandPointer] = useState(-1)
   const inputRef = useRef(null)
 
   const focusInput = useCallback(() => {
@@ -69,23 +74,58 @@ const Console = () => {
     }
   }, [focusInput, clickPosition])
 
+  const handleKey = useCallback((e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onCommand(command)
+      setPrevCommands([command].concat(prevCommands))
+      setCommand('')
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const nextPointer = prevCommandPointer + 1
+      if (nextPointer >= prevCommands.length) {
+        return
+      }
+      setPrevCommandPointer(nextPointer)
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      const nextPointer = prevCommandPointer - 1
+      if (nextPointer < -1) {
+        return
+      }
+      setPrevCommandPointer(nextPointer)
+    }
+  }, [command, onCommand, prevCommands, prevCommandPointer])
+
+  const handleChange = useCallback(value => {
+    setCommand(value)
+    if (prevCommandPointer !== -1) {
+      setPrevCommandPointer(-1)
+    }
+  }, [prevCommandPointer])
+
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
     }
   }, [])
 
+  const value = prevCommandPointer !== -1 ? prevCommands[prevCommandPointer] : command
+
   return (
     <Root onMouseDown={registerMousePosition} onMouseUp={determineClick}>
       <History>
-        History line
+        {history.map((line, index) => (
+          <div key={index}>{line}</div>
+        ))}
       </History>
       <Command height={inputHeight}>
         <Textarea
           inputRef={(el) => { inputRef.current = el }}
-          value={`${command}`}
-          onChange={(e) => setCommand(e.target.value)}
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
           onHeightChange={setInputHeight}
+          onKeyDown={handleKey}
         />
       </Command>
     </Root>
