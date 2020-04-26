@@ -124,7 +124,7 @@ function App () {
       }
 
       return acc
-    }, { start: 0, safe: false, list: [] }).list
+    }, { start: 0, safe: false, list: [] }).list.map(a => a.replace(/^"/, '').replace(/"$/, ''))
 
     const command = args[0]
     const options = args.slice(1)
@@ -165,9 +165,9 @@ function App () {
         }
         case 'new':
           newLog(userId, {
-            start: flags['--start'] || null,
-            notes: flags['--notes'] || null,
-            end: flags['--end'] || null
+            start: flags['--start'] || 0,
+            end: flags['--end'] || 0,
+            notes: flags['--notes'] || null
           })
             .then(() => resolve('Added log'))
             .catch(err => {
