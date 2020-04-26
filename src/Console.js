@@ -3,7 +3,10 @@ import styled from 'styled-components'
 import Textarea from 'react-textarea-autosize'
 
 const History = styled.div`
-  align-items: end;
+  & > div {
+    width: 100%;
+    word-break: break-all;
+  }
 `
 
 const Root = styled.div`
@@ -18,6 +21,8 @@ const Root = styled.div`
   flex-direction: column;
   flex-wrap: nowrap;
   justify-content: flex-end;
+
+  overflow: hidden;
 
   & > ${History},
   & textarea {
@@ -74,12 +79,20 @@ const Console = ({
     }
   }, [focusInput, clickPosition])
 
+  const handleChange = useCallback(value => {
+    setCommand(value)
+    if (prevCommandPointer !== -1) {
+      setPrevCommandPointer(-1)
+    }
+  }, [prevCommandPointer])
+
   const handleKey = useCallback((e) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      onCommand(command)
-      setPrevCommands([command].concat(prevCommands))
-      setCommand('')
+      const value = prevCommandPointer !== -1 ? prevCommands[prevCommandPointer] : command
+      onCommand(value)
+      setPrevCommands([value].concat(prevCommands))
+      handleChange('')
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       const nextPointer = prevCommandPointer + 1
@@ -95,14 +108,7 @@ const Console = ({
       }
       setPrevCommandPointer(nextPointer)
     }
-  }, [command, onCommand, prevCommands, prevCommandPointer])
-
-  const handleChange = useCallback(value => {
-    setCommand(value)
-    if (prevCommandPointer !== -1) {
-      setPrevCommandPointer(-1)
-    }
-  }, [prevCommandPointer])
+  }, [command, onCommand, prevCommands, prevCommandPointer, handleChange])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -116,7 +122,7 @@ const Console = ({
     <Root onMouseDown={registerMousePosition} onMouseUp={determineClick}>
       <History>
         {history.map((line, index) => (
-          <div key={index}>{line}</div>
+          <div key={index} dangerouslySetInnerHTML={{ __html: line }} />
         ))}
       </History>
       <Command height={inputHeight}>

@@ -1,7 +1,7 @@
 import React, { useReducer, useCallback, useEffect } from 'react'
 import styled, { createGlobalStyle } from 'styled-components'
 import Console from 'Console'
-import { streamLogs } from 'api/log'
+import { newLog, startTimer, stopTimer, getLogs } from 'api/log'
 import { login } from 'api/auth'
 import { auth } from 'api'
 
@@ -37,7 +37,6 @@ const Root = styled.main`
 
 const defaultState = {
   history: [],
-  logs: [],
   userInput: [],
   requestInput: false,
   userId: null
@@ -60,11 +59,6 @@ const reducer = (state, action) => {
         ...state,
         userInput: action.nextInput
       }
-    case 'SET_LOGS':
-      return {
-        ...state,
-        logs: action.logs || []
-      }
     case 'SET_USER':
       return {
         ...state,
@@ -75,13 +69,40 @@ const reducer = (state, action) => {
   }
 }
 
+const formatTime = (ts) => {
+  const date = new Date(ts)
+  return `${date.getHours() < 10 ? `0${date.getHours()}` : date.getHours()}:${date.getMinutes() < 10 ? `0${date.getMinutes()}` : date.getMinutes()}`
+}
+
+const formatDuration = (ts) => {
+  let seconds = Math.round(ts / 1000)
+  let hours = 0
+  let minutes = 0
+  if (seconds > 3600) {
+    hours = Math.floor(seconds / 3600)
+    seconds -= hours
+  }
+  if (seconds > 60) {
+    minutes = Math.floor(seconds / 60)
+    seconds -= minutes
+  }
+
+  return `${hours < 10 ? `0${hours}` : hours}:${minutes < 10 ? `0${minutes}` : minutes}:${seconds < 10 ? `0${seconds}` : seconds}`
+}
+
 function App () {
-  const [{ history, userInput, requestInput }, dispatch] = useReducer(reducer, defaultState)
+  const [state, dispatch] = useReducer(reducer, defaultState)
+  const {
+    history,
+    userInput,
+    requestInput,
+    userId
+  } = state
 
   const handleCommand = useCallback(commandInput => {
     dispatch({
       type: 'ADD_HISTORY',
-      lines: [commandInput]
+      lines: [`> ${commandInput}`]
     })
 
     const nextInput = userInput.concat([commandInput])
@@ -122,36 +143,82 @@ function App () {
         case 'login':
           login()
             .catch(err => {
-              resolve(err.message)
+              reject(err)
             })
           break
         case 'clear':
           dispatch({
             type: 'CLEAR_HISTORY'
           })
+          resolve()
+          break
+        case 'logs': {
+          getLogs(userId)
+            .then(logs => {
+              const message = logs.map((log) =>
+                `${log.id}) ${formatTime(log.start)} - ${formatTime(log.end)} (${formatDuration(log.duration)})${log.notes ? `: ${log.notes}` : log.notes}`
+              ).join('\n')
+
+              resolve(`Previous logs:\n${message}`)
+            })
+          break
+        }
+        case 'new':
+          newLog(userId, {
+            start: flags['--start'] || null,
+            notes: flags['--notes'] || null,
+            end: flags['--end'] || null
+          })
+            .then(() => resolve('Added log'))
+            .catch(err => {
+              reject(err)
+            })
+          break
+        case 'start':
+          startTimer(userId)
+            .then(() => resolve('Started timer'))
+            .catch(err => {
+              reject(err)
+            })
+          break
+        case 'stop':
+          stopTimer(userId, flags['--notes'] || null)
+            .then(() => resolve('Stopped timer'))
+            .catch(err => {
+              reject(err)
+            })
           break
         default:
           resolve(`Command ${command} is not valid`)
       }
     })
 
-    promise.then(message => {
-      if (message) {
+    promise
+      .then(message => {
+        if (message) {
+          dispatch({
+            type: 'ADD_HISTORY',
+            lines: message
+              .toString()
+              .split('\n')
+              .map(line =>
+                line
+                  .replace(/\s/g, '&nbsp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+              )
+          })
+        }
+      })
+      .catch(err => {
         dispatch({
           type: 'ADD_HISTORY',
-          lines: [message]
+          lines: `Error: ${err.message}`
         })
-      }
-    })
-  }, [requestInput, userInput])
+      })
+  }, [requestInput, userInput, userId])
 
   useEffect(() => {
-    streamLogs('test')
-      .subscribe(logs => dispatch({
-        type: 'SET_LOGS',
-        logs
-      }))
-
     auth.onAuthStateChanged((user) => {
       if (user) {
         dispatch({
