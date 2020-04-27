@@ -6,15 +6,34 @@ const mapLog = log => ({
   notes: log.notes || ''
 })
 
-export const getLogs = (userId) => {
-  return database.ref(`logs/${userId}`).orderByChild('start').once('value').then(snapshot => {
-    const logs = snapshot.val()
-    const list = Object.keys(logs).map(key => ({
-      ...mapLog(logs[key]),
-      id: key
-    }))
-    return list
-  })
+const mapUpdate = log => ({
+  notes: log.notes,
+  end: parseInt(log.end, 10),
+  start: parseInt(log.start, 10)
+})
+
+export const getLogs = (userId, dateString) => {
+  const now = new Date()
+  now.setDate(1)
+  const startAt = new Date(dateString || now)
+  const endAt = new Date(startAt)
+  endAt.setMonth(startAt.getMonth() + 1)
+  console.log(startAt, endAt)
+
+  return database
+    .ref(`logs/${userId}`)
+    .orderByChild('start')
+    .startAt(startAt.getTime().toString())
+    .endAt(endAt.getTime().toString())
+    .once('value')
+    .then(snapshot => {
+      const logs = snapshot.val() || {}
+      const list = Object.keys(logs).map(key => ({
+        ...mapLog(logs[key]),
+        id: key
+      }))
+      return list
+    })
 }
 
 export const newLog = (userId, options) => {
@@ -23,7 +42,7 @@ export const newLog = (userId, options) => {
       logs = []
     }
 
-    logs.push(options)
+    logs = [mapUpdate(options)].concat(logs)
 
     return logs
   })
@@ -75,7 +94,7 @@ export const stopTimer = (userId, notes) => new Promise((resolve, reject) => {
             logs = []
           }
 
-          logs.push(log)
+          logs = [mapUpdate(log)].concat(logs)
 
           return logs
         })
@@ -84,3 +103,26 @@ export const stopTimer = (userId, notes) => new Promise((resolve, reject) => {
     .then(resolve)
     .catch(reject)
 })
+
+export const editLog = (userId, logId, options) => new Promise((resolve, reject) => {
+  let written = false
+  database.ref(`logs/${userId}/${logId}`).transaction(log => {
+    if (log) {
+      written = true
+
+      log = mapUpdate({
+        ...log,
+        ...options
+      })
+
+      return log
+    }
+  })
+    .then(() => {
+      if (!written) {
+        reject(new Error('Log does not exist'))
+      }
+    })
+})
+
+export const removeLog = (userId, logId) => database.ref(`logs/${userId}/${logId}`).remove()

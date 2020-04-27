@@ -1,7 +1,7 @@
 import React, { useReducer, useCallback, useEffect } from 'react'
 import styled, { createGlobalStyle } from 'styled-components'
 import Console from 'Console'
-import { newLog, startTimer, stopTimer, getLogs } from 'api/log'
+import { newLog, startTimer, stopTimer, getLogs, editLog, removeLog } from 'api/log'
 import { login } from 'api/auth'
 import { auth } from 'api'
 
@@ -39,7 +39,8 @@ const defaultState = {
   history: [],
   userInput: [],
   requestInput: false,
-  userId: null
+  userId: null,
+  requestingCommand: null
 }
 
 const reducer = (state, action) => {
@@ -58,6 +59,18 @@ const reducer = (state, action) => {
       return {
         ...state,
         userInput: action.nextInput
+      }
+    case 'REQUEST_INPUT':
+      return {
+        ...state,
+        requestInput: true,
+        userInput: action.nextInput
+      }
+    case 'DONE_INPUT':
+      return {
+        ...state,
+        requestInput: false,
+        userInput: []
       }
     case 'SET_USER':
       return {
@@ -111,7 +124,11 @@ function App () {
         type: 'SET_INPUT',
         nextInput
       })
+
+      commandInput = nextInput[0]
     }
+
+    console.log(commandInput, requestInput, nextInput, userInput)
 
     const args = commandInput.split('').reduce((acc, char, index, arr) => {
       if (((char === ' ' || char === '=') && !acc.safe)) {
@@ -124,19 +141,37 @@ function App () {
       }
 
       return acc
-    }, { start: 0, safe: false, list: [] }).list.map(a => a.replace(/^"/, '').replace(/"$/, ''))
+    }, { start: 0, safe: false, list: [] }).list
+      .map(a => a.replace(/^"/, '').replace(/"$/, ''))
 
     const command = args[0]
-    const options = args.slice(1)
+    const rest = args.slice(1)
 
-    const flags = options.reduce((acc, option, index, arr) => {
-      if (option.match(/^--?/)) {
-        acc[option] = arr[index + 1]
-      }
-      return acc
-    }, {})
+    const alias = {
+      '-n': '--notes',
+      '-s': '--start',
+      '-e': '--end',
+      '-p': '--page'
+    }
 
-    console.log(args, flags)
+    const options = rest
+      .map(option => alias[option] || option)
+      .reduce((acc, option, index, arr) => {
+        const reg = /^--/
+        if (reg.test(option)) {
+          acc.flags[option.replace(reg, '')] = arr[index + 1]
+        } else if (!reg.test(arr[index - 1])) {
+          acc.params.push(option)
+        }
+        return acc
+      }, {
+        params: [],
+        flags: {}
+      })
+
+    console.log(args, options)
+
+    const { flags, params } = options
 
     const promise = new Promise((resolve, reject) => {
       switch (command) {
@@ -153,7 +188,7 @@ function App () {
           resolve()
           break
         case 'logs': {
-          getLogs(userId)
+          getLogs(userId, flags.page || params[0] || 0)
             .then(logs => {
               const message = logs.map((log) =>
                 `${log.id}) ${formatTime(log.start)} - ${formatTime(log.end)} (${formatDuration(log.duration)})${log.notes ? `: ${log.notes}` : log.notes}`
@@ -165,9 +200,9 @@ function App () {
         }
         case 'new':
           newLog(userId, {
-            start: flags['--start'] || 0,
-            end: flags['--end'] || 0,
-            notes: flags['--notes'] || null
+            start: flags.start || 0,
+            end: flags.end || 0,
+            notes: flags.notes || null
           })
             .then(() => resolve('Added log'))
             .catch(err => {
@@ -182,11 +217,42 @@ function App () {
             })
           break
         case 'stop':
-          stopTimer(userId, flags['--notes'] || null)
+          stopTimer(userId, flags.notes || null)
             .then(() => resolve('Stopped timer'))
             .catch(err => {
               reject(err)
             })
+          break
+        case 'edit':
+
+          // editLog(userId, flags['--id']
+          break
+        case 'delete':
+          if (!params[0] && !flags.id) {
+            reject(new Error('Missing log id'))
+            return
+          }
+
+          if (nextInput.length === 1) {
+            dispatch({
+              type: 'REQUEST_INPUT',
+              nextInput
+            })
+            resolve('Are you sure (Y/n)')
+          } else if (nextInput[1].toString().toLowerCase() === 'y') {
+            removeLog(userId, params[0])
+              .then(() => {
+                dispatch({
+                  type: 'DONE_INPUT'
+                })
+                resolve('Deleted log')
+              })
+              .catch(reject)
+          } else {
+            dispatch({
+              type: 'DONE_INPUT'
+            })
+          }
           break
         default:
           resolve(`Command ${command} is not valid`)
